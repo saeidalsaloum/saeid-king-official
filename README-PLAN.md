@@ -1,3 +1,3 @@
 # Saeid KING Official
 
-Website foundation plan.
+Website foundation plan updated.
