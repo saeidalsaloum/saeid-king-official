@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" role="img" aria-labelledby="title desc">
+  <title id="title">Saeid KING mark</title>
+  <desc id="desc">A restrained gold crown mark for the Saeid KING official website.</desc>
+  <rect width="160" height="160" rx="36" fill="#101018"/>
+  <path d="M34 66l25 22 21-39 21 39 25-22-9 52H43L34 66z" fill="#d7b46a"/>
+  <path d="M48 125h64" stroke="#f2d890" stroke-width="8" stroke-linecap="round"/>
+  <circle cx="80" cy="43" r="7" fill="#f2d890"/>
+</svg>

@@ -1,0 +1,154 @@
+name: Static checks
+
+on:
+  pull_request:
+  push:
+
+jobs:
+  static-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify static site safety
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          required_files=(
+            index.html
+            media-kit.html
+            privacy.html
+            404.html
+            robots.txt
+            sitemap.xml
+            README.md
+            AGENTS.md
+            assets/css/styles.css
+            assets/img/saeid-king-mark.svg
+            docs/CONTENT_STRATEGY.md
+          )
+
+          for file in "${required_files[@]}"; do
+            test -f "$file" || { echo "Missing required file: $file"; exit 1; }
+          done
+
+          forbidden_files=$(find . -maxdepth 5 -path "./.git" -prune -o -type f -print | python3 -c 'import sys, pathlib
+bad=[]
+for line in sys.stdin:
+    path=line.strip()
+    if not path:
+        continue
+    name=pathlib.Path(path).name.lower()
+    lowered=path.lower()
+    if name in {"test.txt", "kit.html", "entity-test.html", "minimal.html", "arabic-test.html", "readme-plan.md"} or any(token in lowered for token in ("scratch", "probe", "tmp", "temp")):
+        bad.append(path)
+print("\n".join(bad))')
+          if [ -n "$forbidden_files" ]; then
+            printf '%s\n' "$forbidden_files"
+            echo "Forbidden temporary or obsolete file found."
+            exit 1
+          fi
+
+          old_email="saeidwebbservice""@gmail.com"
+          if grep -RIn "$old_email" . --exclude-dir=.git; then
+            echo "Legacy contact email found."
+            exit 1
+          fi
+
+          bad_brand='سعيد'" KING"
+          if grep -RIn "$bad_brand" . --exclude-dir=.git --exclude='static-check.yml'; then
+            echo "Non-canonical Arabic brand spelling found."
+            exit 1
+          fi
+
+          if grep -RInEi 'personnummer|password|api_key|private_key|bankid|href="tel:|tel:|googletagmanager|google-analytics|gtag\(|facebook\.net|hotjar|matomo' . --exclude-dir=.git --exclude='static-check.yml'; then
+            echo "Sensitive or tracking-related pattern found."
+            exit 1
+          fi
+
+          if grep -RInE 'href=["'"'"']kit\.html|src=["'"'"']kit\.html' . --exclude-dir=.git; then
+            echo "Obsolete kit.html reference found."
+            exit 1
+          fi
+
+          python3 - <<'PY'
+          from html.parser import HTMLParser
+          from pathlib import Path
+          from urllib.parse import unquote, urlparse
+          import sys
+
+          root = Path('.')
+          html_files = sorted(p for p in root.glob('*.html'))
+          errors = []
+
+          class Parser(HTMLParser):
+              def __init__(self):
+                  super().__init__()
+                  self.html_attrs = {}
+                  self.has_viewport = False
+                  self.stylesheet = False
+                  self.ids = set()
+                  self.refs = []
+
+              def handle_starttag(self, tag, attrs):
+                  attrs = dict(attrs)
+                  if tag == 'html':
+                      self.html_attrs = attrs
+                  if tag == 'meta' and attrs.get('name') == 'viewport':
+                      self.has_viewport = True
+                  if tag == 'link' and attrs.get('href') == 'assets/css/styles.css':
+                      self.stylesheet = True
+                  if 'id' in attrs:
+                      self.ids.add(attrs['id'])
+                  for attr in ('href', 'src'):
+                      value = attrs.get(attr)
+                      if value:
+                          self.refs.append((attr, value))
+
+          parsed = {}
+          for path in html_files:
+              parser = Parser()
+              parser.feed(path.read_text(encoding='utf-8'))
+              parsed[path.name] = parser
+              if parser.html_attrs.get('lang') != 'ar':
+                  errors.append(f'{path}: missing lang="ar"')
+              if parser.html_attrs.get('dir') != 'rtl':
+                  errors.append(f'{path}: missing dir="rtl"')
+              if not parser.has_viewport:
+                  errors.append(f'{path}: missing viewport meta tag')
+              if not parser.stylesheet:
+                  errors.append(f'{path}: missing assets/css/styles.css reference')
+
+          for path in html_files:
+              parser = parsed[path.name]
+              for attr, ref in parser.refs:
+                  if ref.startswith(('mailto:', 'http://', 'https://', '#')):
+                      if ref.startswith('#') and ref[1:] not in parser.ids:
+                          errors.append(f'{path}: missing anchor {ref}')
+                      continue
+                  parsed_ref = urlparse(ref)
+                  if parsed_ref.scheme or parsed_ref.netloc:
+                      continue
+                  target_text = unquote(parsed_ref.path)
+                  if not target_text:
+                      continue
+                  target = (path.parent / target_text).resolve()
+                  try:
+                      target.relative_to(root.resolve())
+                  except ValueError:
+                      errors.append(f'{path}: {attr} escapes repository root: {ref}')
+                      continue
+                  if not target.exists():
+                      errors.append(f'{path}: missing local {attr}: {ref}')
+                      continue
+                  if parsed_ref.fragment:
+                      target_name = target.name if target.is_file() else 'index.html'
+                      target_parser = parsed.get(target_name)
+                      if target_parser and parsed_ref.fragment not in target_parser.ids:
+                          errors.append(f'{path}: missing anchor {ref}')
+
+          if errors:
+              print('\n'.join(errors))
+              sys.exit(1)
+          print(f'Validated {len(html_files)} HTML files.')
+          PY
