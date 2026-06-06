@@ -16,3 +16,10 @@ This repository contains the static official website for **Saeid KING**.
 - Keep `en.html` English with `lang="en"` and `dir="ltr"`.
 - Keep all public pages referencing `assets/css/styles.css` and local assets only.
 - Keep the site GitHub Pages-ready from the repository root.
+
+
+## YouTube support documentation
+
+- Keep `docs/YOUTUBE_CHANNEL_PROFILE.md` factual, reusable, and safe for public channel materials.
+- Verify any audience numbers, upload schedules, sponsorship claims, press mentions, channel statistics, or YouTube URLs before publishing them.
+- Prefer documentation notes over public website links when an official channel URL is uncertain.
