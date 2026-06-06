@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://saeidalsaloum.github.io/saeid-king-official/sitemap.xml

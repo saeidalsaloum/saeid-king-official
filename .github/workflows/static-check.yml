@@ -1,0 +1,48 @@
+name: Static site checks
+
+on:
+  pull_request:
+  push:
+    branches: ["main"]
+
+jobs:
+  static-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify required files
+        run: |
+          test -f index.html
+          test -f media-kit.html
+          test -f privacy.html
+          test -f 404.html
+          test -f robots.txt
+          test -f sitemap.xml
+          test -f README.md
+          test -f AGENTS.md
+          test -f assets/css/styles.css
+          test -f assets/img/saeid-king-mark.svg
+          test -f docs/CONTENT_STRATEGY.md
+
+      - name: Block temporary files
+        run: |
+          if find . -maxdepth 5 -type f | grep -Ei 'test\.txt|entity-test|minimal|arabic-test|README-PLAN|scratch|probe|(^|/)tmp\.|(^|/)temp\.'; then
+            echo "Forbidden temporary/probe file found."
+            exit 1
+          fi
+
+      - name: Block obvious sensitive or tracking markers
+        run: |
+          if grep -RInEi 'personnummer|password|api_key|private_key|bankid|phone|telefon|legal case|court case|insurance|migration|googletagmanager|google-analytics|gtag\(|facebook\.net|hotjar|matomo' . --exclude-dir=.git --exclude='static-check.yml'; then
+            echo "Sensitive or tracking marker found."
+            exit 1
+          fi
+
+      - name: Block old kit page path
+        run: |
+          if find . -maxdepth 5 -type f -name 'kit.html' | grep -q .; then
+            echo "Old kit.html file found."
+            exit 1
+          fi
