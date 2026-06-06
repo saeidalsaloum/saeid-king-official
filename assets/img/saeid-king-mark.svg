@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" role="img" aria-labelledby="title desc">
+  <title id="title">Saeid KING mark</title>
+  <desc id="desc">A restrained geometric crown mark for Saeid KING.</desc>
+  <rect width="160" height="160" rx="36" fill="#0b0d12"/>
+  <path d="M36 104V61l24 20 20-34 20 34 24-20v43H36Z" fill="none" stroke="#d8b66a" stroke-width="8" stroke-linejoin="round"/>
+  <path d="M43 118h74" stroke="#f1e4bf" stroke-width="8" stroke-linecap="round"/>
+  <circle cx="80" cy="47" r="6" fill="#f1e4bf"/>
+</svg>
