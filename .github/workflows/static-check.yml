@@ -1,0 +1,165 @@
+name: Static website checks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  static-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate static site
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          required_files=(
+            index.html
+            en.html
+            media-kit.html
+            privacy.html
+            404.html
+            robots.txt
+            sitemap.xml
+            README.md
+            AGENTS.md
+            assets/css/styles.css
+            assets/img/saeid-king-mark.svg
+            docs/CONTENT_STRATEGY.md
+            .github/workflows/static-check.yml
+          )
+
+          for file in "${required_files[@]}"; do
+            test -f "$file" || { echo "Missing required file: $file"; exit 1; }
+          done
+
+          forbidden_files=(
+            test.txt
+            kit.html
+            entity-test.html
+            minimal.html
+            arabic-test.html
+            README-PLAN.md
+          )
+
+          for file in "${forbidden_files[@]}"; do
+            test ! -e "$file" || { echo "Forbidden file present: $file"; exit 1; }
+          done
+
+          if find . -path './.git' -prune -o -type f -print | grep -Ei '(scratch|probe|tmp|temp)' ; then
+            echo "Temporary file detected."
+            exit 1
+          fi
+
+          old_email="saeidwebbservice""@gmail.com"
+          grep -RIn "$old_email" . --exclude-dir=.git --exclude='static-check.yml' && { echo "Old email found."; exit 1; } || true
+          grep -RInE '(^|["/])kit\.html(["#?[:space:]]|$)' . --exclude-dir=.git --exclude='static-check.yml' && { echo "Old kit.html reference found."; exit 1; } || true
+
+          bad_brand="$(printf '\u0633\u0639\u064a\u062f KING')"
+          if grep -RIn "$bad_brand" . --exclude-dir=.git --exclude='.github/workflows/static-check.yml'; then
+            echo "Non-canonical Arabic-script brand spelling found."
+            exit 1
+          fi
+
+          if grep -RInEi 'personnummer|password|api_key|private_key|bankid|href="tel:|tel:|googletagmanager|google-analytics|gtag\(|facebook\.net|hotjar|matomo' . --exclude-dir=.git --exclude='static-check.yml'; then
+            echo "Sensitive, phone, tracking, or analytics marker found."
+            exit 1
+          fi
+
+          test "$(grep -c 'https://saeidalsaloum.github.io/saeid-king-official/sitemap.xml' robots.txt)" -eq 1
+          grep -q 'https://saeidalsaloum.github.io/saeid-king-official/en.html' sitemap.xml
+
+          python3 - <<'PY'
+          from html.parser import HTMLParser
+          from pathlib import Path
+          from urllib.parse import urlparse, unquote
+          import re
+          import sys
+
+          root = Path('.')
+          html_files = sorted(root.glob('*.html'))
+          expected = {'index.html', 'en.html', 'media-kit.html', 'privacy.html', '404.html'}
+          found = {p.name for p in html_files}
+          if expected - found:
+              raise SystemExit(f"Missing HTML pages: {sorted(expected - found)}")
+
+          class Parser(HTMLParser):
+              def __init__(self):
+                  super().__init__()
+                  self.html_attrs = {}
+                  self.links = []
+                  self.srcs = []
+                  self.anchors = set()
+                  self.viewport = False
+                  self.stylesheet = False
+                  self.remote_asset = []
+              def handle_starttag(self, tag, attrs):
+                  attrs = dict(attrs)
+                  if tag == 'html':
+                      self.html_attrs = attrs
+                  if 'id' in attrs:
+                      self.anchors.add(attrs['id'])
+                  if tag == 'a' and 'href' in attrs:
+                      self.links.append(attrs['href'])
+                  if tag in {'img', 'script', 'source', 'video', 'audio', 'iframe'} and 'src' in attrs:
+                      self.srcs.append(attrs['src'])
+                  if tag == 'meta' and attrs.get('name') == 'viewport':
+                      self.viewport = True
+                  if tag == 'link' and attrs.get('rel') == 'stylesheet':
+                      href = attrs.get('href', '')
+                      self.stylesheet = href == 'assets/css/styles.css'
+                  for key in ('href', 'src'):
+                      value = attrs.get(key, '')
+                      if value.startswith(('http://', 'https://', '//')):
+                          self.remote_asset.append(value)
+
+          for path in html_files:
+              parser = Parser()
+              text = path.read_text(encoding='utf-8')
+              parser.feed(text)
+
+              lang = parser.html_attrs.get('lang')
+              direction = parser.html_attrs.get('dir')
+              if path.name == 'en.html':
+                  assert lang == 'en' and direction == 'ltr', f'{path}: en.html must be lang=en dir=ltr'
+              else:
+                  assert lang == 'ar' and direction == 'rtl', f'{path}: Arabic pages must be lang=ar dir=rtl'
+
+              assert parser.viewport, f'{path}: missing viewport meta'
+              assert parser.stylesheet, f'{path}: missing assets/css/styles.css reference'
+              assert not parser.remote_asset, f'{path}: remote asset found {parser.remote_asset}'
+
+              if path.name == 'en.html':
+                  assert re.search(r'<a[^>]+href=["\']index\.html["\'][^>]*>\s*العربية\s*</a>', text), f'{path}: missing العربية link to index.html'
+              else:
+                  assert re.search(r'<a[^>]+href=["\']en\.html["\'][^>]*>\s*English\s*</a>', text), f'{path}: missing English link to en.html'
+
+              refs = parser.links + parser.srcs
+              for ref in refs:
+                  if ref.startswith(('mailto:', '#')):
+                      if ref.startswith('#') and ref[1:] and ref[1:] not in parser.anchors:
+                          raise AssertionError(f'{path}: broken anchor {ref}')
+                      continue
+                  parsed = urlparse(ref)
+                  if parsed.scheme or parsed.netloc:
+                      continue
+                  target_part = unquote(parsed.path)
+                  if not target_part:
+                      continue
+                  target = (path.parent / target_part).resolve()
+                  try:
+                      target.relative_to(root.resolve())
+                  except ValueError:
+                      raise AssertionError(f'{path}: reference leaves repository root: {ref}')
+                  if not target.exists():
+                      raise AssertionError(f'{path}: missing local reference {ref}')
+                  if parsed.fragment and target.suffix == '.html':
+                      other = Parser()
+                      other.feed(target.read_text(encoding='utf-8'))
+                      if parsed.fragment not in other.anchors:
+                          raise AssertionError(f'{path}: missing anchor {ref}')
+          PY
