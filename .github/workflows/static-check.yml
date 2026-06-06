@@ -55,6 +55,12 @@ print("\n".join(bad))')
             exit 1
           fi
 
+          bad_brand='سعيد'" KING"
+          if grep -RIn "$bad_brand" . --exclude-dir=.git --exclude='static-check.yml'; then
+            echo "Non-canonical Arabic brand spelling found."
+            exit 1
+          fi
+
           if grep -RInEi 'personnummer|password|api_key|private_key|bankid|href="tel:|tel:|googletagmanager|google-analytics|gtag\(|facebook\.net|hotjar|matomo' . --exclude-dir=.git --exclude='static-check.yml'; then
             echo "Sensitive or tracking-related pattern found."
             exit 1
